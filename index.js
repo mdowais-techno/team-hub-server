@@ -52,13 +52,19 @@ const limiter = rateLimit({
 app.use('/api/', limiter);
 
 // CORS configuration
+// app.use(cors({
+//   origin: process.env.NODE_ENV === 'production' 
+//     ? ['https://your-domain.com'] 
+//     : ['http://localhost:3000', 'http://localhost:5173', process.env.FRONTEND_URL],
+//   credentials: true,
+//   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+//   allowedHeaders: ['Content-Type', 'Authorization']
+// }));
+
 app.use(cors({
-  origin: process.env.NODE_ENV === 'production' 
-    ? ['https://your-domain.com'] 
-    : ['http://localhost:3000', 'http://localhost:5173', process.env.FRONTEND_URL],
-  credentials: true,
+  origin: '*', // Allows all origins
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
+  allowedHeaders: ['Content-Type', 'Authorization'],
 }));
 
 // Body parsing middleware
