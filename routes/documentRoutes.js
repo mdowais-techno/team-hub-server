@@ -1,11 +1,43 @@
 import express from 'express';
 import { authenticateToken } from '../middleware/auth.js';
+import {
+  getFolderAndFiles,
+  createFolder,
+  getFileUploadUrl,
+  getFileViewUrl,
+  renameFile,
+  deleteFile,
+  uploadFile,
+  shareWithUser,
+  shareWithDepartment,
+  shareWithJobProfile,
+  getFilesSharedWithMe,
+  getSharingDetails,
+  removeShare
+} from '../controllers/fileController.js';
+import validateUser from '../utils/validator.js';
 
 const router = express.Router();
 
-// Placeholder routes for documents
-router.get('/', authenticateToken, (req, res) => {
-  res.json({ message: 'Documents endpoint - coming soon' });
-});
+// Public endpoints
+router.get("/file-upload-url", getFileUploadUrl);
+router.get("/file-view-url", getFileViewUrl);
+
+// Authenticated endpoints
+router.get("/", validateUser, getFolderAndFiles);
+router.post("/folder", validateUser, authenticateToken, createFolder);
+router.post("/file-upload",validateUser, authenticateToken, uploadFile);
+
+// File operations
+router.put("/rename", renameFile);
+router.delete("/remove", deleteFile);
+
+// Sharing endpoints
+router.post("/share-user", validateUser, shareWithUser);
+router.post("/share-department", validateUser, shareWithDepartment);
+router.post("/share-job-profile", validateUser, shareWithJobProfile);
+router.get("/shared-with-me", validateUser, getFilesSharedWithMe);
+router.get("/shared-with/:key", validateUser, getSharingDetails);
+router.delete("/remove-share", validateUser, removeShare);
 
 export default router;
