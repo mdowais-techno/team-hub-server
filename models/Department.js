@@ -20,7 +20,7 @@ const departmentSchema = new mongoose.Schema({
   },
   employees: [{
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'User'
+    ref: 'Employee'
   }],
   budget: {
     amount: {

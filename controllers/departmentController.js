@@ -1,5 +1,6 @@
 import Department from '../models/Department.js';
 import User from '../models/User.js';
+import JobProfile from '../models/JobProfile.js';
 
 // Get all departments
 export const getDepartments = async (req, res) => {
@@ -17,16 +18,37 @@ export const getDepartments = async (req, res) => {
 
     const departments = await Department.find(query)
       .populate('head', 'name email')
-      .populate('employees', 'name email jobTitle')
+      .populate('employees', 'fullName email jobTitle') // Use 'fullName'
       .sort({ name: 1 })
       .skip((page - 1) * limit)
       .limit(limit)
-      .lean();
+      .lean(); // lean for performance
 
-    console.log(`✅ Found ${departments.length} departments`);
+    // 💡 Fetch job profiles once
+    const jobProfiles = await JobProfile.find({}, 'title department').lean();
+
+    // 🧠 Map job profiles by departmentId
+    const jobProfilesMap = {};
+    for (const profile of jobProfiles) {
+      const depId = profile.department.toString();
+      if (!jobProfilesMap[depId]) jobProfilesMap[depId] = [];
+      jobProfilesMap[depId].push(profile.title);
+    }
+
+    // ➕ Inject job profiles into department
+    const enrichedDepartments = departments.map(dep => {
+      const jobProfileTitles = jobProfilesMap[dep._id.toString()] || [];
+      return {
+        ...dep,
+        jobProfiles: jobProfileTitles,
+        jobProfileCount: jobProfileTitles.length,
+      };
+    });
+
+    console.log(`✅ Enriched ${enrichedDepartments.length} departments`);
 
     res.status(200).json({
-      departments,
+      departments: enrichedDepartments,
       total,
       page,
       limit,
@@ -42,22 +64,38 @@ export const getDepartments = async (req, res) => {
 export const getDepartmentById = async (req, res) => {
   try {
     console.log('🏢 Fetching department by ID:', req.params.id);
+
+    // Fetch department details with head & employees populated
     const department = await Department.findById(req.params.id)
       .populate('head', 'name email jobTitle')
-      .populate('employees', 'name email jobTitle status');
+      .populate('employees', 'name email jobTitle status')
+      .lean(); // Use lean for better performance
 
     if (!department) {
       console.log('❌ Department not found:', req.params.id);
       return res.status(404).json({ error: 'Department not found' });
     }
 
+    // Fetch job profiles for this department
+    const jobProfiles = await JobProfile.find({ department: req.params.id }, 'title').lean();
+    const jobProfileTitles = jobProfiles.map(p => p.title);
+
+    // Add job profiles to department object
+    const enrichedDepartment = {
+      ...department,
+      jobProfiles: jobProfileTitles,
+      jobProfileCount: jobProfileTitles.length,
+    };
+
     console.log('✅ Department found:', department.name);
-    res.json({ department });
+    res.json({ department: enrichedDepartment });
+
   } catch (error) {
     console.error('❌ Get department error:', error);
     res.status(500).json({ error: 'Failed to fetch department' });
   }
 };
+
 
 // Create new department
 export const createDepartment = async (req, res) => {
@@ -156,18 +194,22 @@ export const updateDepartment = async (req, res) => {
 export const deleteDepartment = async (req, res) => {
   try {
     console.log('🗑️ Deleting department:', req.params.id);
+
     const department = await Department.findById(req.params.id);
-    
     if (!department) {
       console.log('❌ Department not found for deletion:', req.params.id);
       return res.status(404).json({ error: 'Department not found' });
     }
 
-    // Check if department has employees
+    // 1. Check if department has any employees
     const employeeCount = await User.countDocuments({ department: req.params.id });
-    if (employeeCount > 0) {
-      return res.status(400).json({ 
-        error: 'Cannot delete department with employees. Please reassign employees first.' 
+
+    // 2. Check if any job profiles are associated with this department
+    const jobProfileCount = await JobProfile.countDocuments({ department: req.params.id });
+
+    if (employeeCount > 0 || jobProfileCount > 0) {
+      return res.status(400).json({
+        error: 'Cannot delete department. Please reassign or remove all employees and job profiles before deleting.',
       });
     }
 

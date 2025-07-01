@@ -33,9 +33,9 @@ const sharingFileSchema = new mongoose.Schema({
 });
 
 // Create compound indexes to prevent duplicate shares
-sharingFileSchema.index({ key: 1, user: 1 }, { unique: true, sparse: true });
-sharingFileSchema.index({ key: 1, department: 1 }, { unique: true, sparse: true });
-sharingFileSchema.index({ key: 1, jobProfile: 1 }, { unique: true, sparse: true });
+// sharingFileSchema.index({ key: 1, user: 1 }, { unique: true, sparse: true });
+// sharingFileSchema.index({ key: 1, department: 1 }, { unique: true, sparse: true });
+// sharingFileSchema.index({ key: 1, jobProfile: 1 }, { unique: true, sparse: true });
 
 const SharingFile = mongoose.model('SharingFile', sharingFileSchema);
 export default SharingFile;

@@ -8,12 +8,16 @@ import {
   renameFile,
   deleteFile,
   uploadFile,
+  uploadFolderStructure,
+  moveFile,
   shareWithUser,
   shareWithDepartment,
   shareWithJobProfile,
   getFilesSharedWithMe,
   getSharingDetails,
-  removeShare
+  removeShare,
+  createExternalLink,
+  saveEditedImage
 } from '../controllers/fileController.js';
 import validateUser from '../utils/validator.js';
 
@@ -26,11 +30,15 @@ router.get("/file-view-url", getFileViewUrl);
 // Authenticated endpoints
 router.get("/", validateUser, getFolderAndFiles);
 router.post("/folder", validateUser, authenticateToken, createFolder);
-router.post("/file-upload",validateUser, authenticateToken, uploadFile);
+router.post("/file-upload", validateUser, authenticateToken, uploadFile);
+router.post("/folder-upload", validateUser, authenticateToken, uploadFolderStructure);
+router.post("/external-link", validateUser, authenticateToken, createExternalLink);
 
 // File operations
 router.put("/rename", renameFile);
+router.put("/move",validateUser, authenticateToken, moveFile);
 router.delete("/remove", deleteFile);
+router.post("/save-edited-image", authenticateToken, saveEditedImage);
 
 // Sharing endpoints
 router.post("/share-user", validateUser, shareWithUser);

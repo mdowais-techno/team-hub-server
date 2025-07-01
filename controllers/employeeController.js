@@ -2,7 +2,7 @@ import Employee from '../models/Employee.js';
 import Department from '../models/Department.js';
 import JobProfile from '../models/JobProfile.js';
 import User from '../models/User.js';
-
+import bcrypt from 'bcryptjs';
 // Get all employees
 export const getEmployees = async (req, res) => {
   try {
@@ -75,7 +75,7 @@ export const getEmployeeById = async (req, res) => {
 };
 
 // Create new employee
-export const createEmployee = async (req, res) => {
+export const createEmployee2 = async (req, res) => {
   try {
     console.log('➕ Creating employee:', req.body);
     const {
@@ -231,6 +231,121 @@ export const createEmployee = async (req, res) => {
   }
 };
 
+export const createEmployee = async (req, res) => {
+  try {
+    const {
+      fullName,
+      email,
+      password,
+      department,
+      jobProfile,
+      jobTitle,
+      startDate,
+      status,
+      phone,
+      salary,
+      role
+    } = req.body;
+
+    const normalizedEmail = email.toLowerCase().trim();
+
+    // 🔍 Check if employee exists
+    const existingEmployee = await Employee.findOne({ email: normalizedEmail });
+    if (existingEmployee) {
+      return res.status(400).json({
+        error: 'An employee with this email address already exists',
+        field: 'email'
+      });
+    }
+
+    // ✅ Validate department and job profile
+    const [departmentExists, jobProfileExists] = await Promise.all([
+      Department.findById(department),
+      JobProfile.findById(jobProfile)
+    ]);
+
+    if (!departmentExists) {
+      return res.status(400).json({ error: 'Invalid department selected' });
+    }
+    if (!jobProfileExists) {
+      return res.status(400).json({ error: 'Invalid job profile selected' });
+    }
+
+    // 🔐 Hash password once
+    const hashedPassword = await bcrypt.hash(password || 'defaultPassword123', 12);
+
+    // ✅ Step 1: Create user first (auto-generates employeeId in pre-save)
+    const user = new User({
+      name: fullName.trim(),
+      email: normalizedEmail,
+      password: hashedPassword,
+      role: role || 'employee',
+      department,
+      jobProfile,
+      jobTitle: jobTitle.trim(),
+      startDate
+    });
+
+    await user.save(); // triggers pre-save to generate employeeId
+
+    // ✅ Step 2: Use same employeeId in Employee
+    const employee = new Employee({
+      fullName: user.name,
+      email: user.email,
+      password: user.password,
+      department: user.department,
+      jobProfile: user.jobProfile,
+      jobTitle: user.jobTitle,
+      startDate: user.startDate,
+      status: status || 'Active',
+      role: user.role,
+      employeeId: user.employeeId,
+      phone: phone?.trim(),
+      salary: salary
+        ? { amount: Number(salary), currency: 'USD' }
+        : undefined
+    });
+
+    await employee.save();
+
+    // 📌 Add employee to department
+    await Department.findByIdAndUpdate(
+      department,
+      { $addToSet: { employees: employee._id } }
+    );
+
+    const populatedEmployee = await Employee.findById(employee._id)
+      .populate('department', 'name')
+      .populate('jobProfile', 'title');
+
+    return res.status(201).json({
+      message: 'Employee created successfully',
+      employee: populatedEmployee
+    });
+  } catch (error) {
+    console.error('❌ Error creating employee:', error);
+
+    // Handle MongoDB duplicate key error
+    if (error.code === 11000) {
+      const field = Object.keys(error.keyPattern || {})[0];
+      return res.status(400).json({
+        error: `Duplicate entry for ${field}`,
+        field
+      });
+    }
+
+    if (error.name === 'ValidationError') {
+      const details = Object.values(error.errors).map(err => ({
+        field: err.path,
+        message: err.message
+      }));
+      return res.status(400).json({ error: 'Validation failed', details });
+    }
+
+    return res.status(500).json({ error: 'Failed to create employee' });
+  }
+};
+
 // Update employee
 export const updateEmployee = async (req, res) => {
   try {
@@ -361,7 +476,6 @@ export const getEmployeeStats = async (req, res) => {
 
     const totalEmployees = await Employee.countDocuments();
     const activeEmployees = await Employee.countDocuments({ status: 'Active' });
-    const onLeaveEmployees = await Employee.countDocuments({ status: 'On Leave' });
     const inactiveEmployees = await Employee.countDocuments({ status: 'Inactive' });
 
     const departmentStats = await Employee.aggregate([

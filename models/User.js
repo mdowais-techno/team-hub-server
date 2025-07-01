@@ -117,17 +117,48 @@ userSchema.pre('save', async function(next) {
 });
 
 // Generate employee ID
-userSchema.pre('save', async function(next) {
+// userSchema.pre('save', async function(next) {
+//   if (!this.employeeId && this.isNew) {
+//     try {
+//       const count = await this.constructor.countDocuments();
+//       this.employeeId = `EMP${String(count + 1).padStart(4, '0')}`;
+//     } catch (error) {
+//       console.error('Error generating employee ID:', error);
+//     }
+//   }
+//   next();
+// });
+
+// Generate 8-character employee ID with department prefix
+userSchema.pre('save', async function (next) {
   if (!this.employeeId && this.isNew) {
     try {
-      const count = await this.constructor.countDocuments();
-      this.employeeId = `EMP${String(count + 1).padStart(4, '0')}`;
+      let deptPrefix = 'GEN'; // default prefix if department is missing
+      if (this.department) {
+        const Department = mongoose.model('Department');
+        const dept = await Department.findById(this.department);
+        if (dept && dept.name) {
+          deptPrefix = dept.name
+            .split(' ')[0]     // Take first word (optional)
+            .toUpperCase()
+            .slice(0, 3);      // Take first 3 letters
+        }
+      }
+
+      // Remove non-alphabetic characters from prefix
+      deptPrefix = deptPrefix.replace(/[^A-Z]/g, '');
+
+      // Create a numeric suffix (max 5 digits)
+      const randomNum = Math.floor(10000 + Math.random() * 90000); // e.g., 12345
+
+      this.employeeId = `${deptPrefix}${randomNum}`.slice(0, 8); // Trim to max 8 chars
     } catch (error) {
-      console.error('Error generating employee ID:', error);
+      console.error('❌ Error generating employee ID:', error);
     }
   }
   next();
 });
+
 
 // Compare password method
 userSchema.methods.comparePassword = async function(candidatePassword) {

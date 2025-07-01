@@ -1,4 +1,3 @@
-// services/s3Service.js
 import {
   S3Client,
   ListObjectsV2Command,
@@ -86,41 +85,30 @@ export const getFileUploadUrl = async (key) => {
   }
 };
 
-export const deleteS3File = async (key) => {
-  try {
-    // Folder: delete all keys under the prefix
-    if (key.endsWith('/')) {
-      const listCommand = new ListObjectsV2Command({
-        Bucket: config.bucketName,
-        Prefix: key,
-      });
-
-      const { Contents } = await s3Client.send(listCommand);
-
-      if (Contents && Contents.length > 0) {
-        for (const item of Contents) {
-          await s3Client.send(new DeleteObjectCommand({
-            Bucket: config.bucketName,
-            Key: item.Key,
-          }));
-        }
-      }
-    } else {
-      // Single file
-      await s3Client.send(new DeleteObjectCommand({
-        Bucket: config.bucketName,
-        Key: key,
-      }));
-    }
-  } catch (error) {
-    console.error("Error deleting:", error);
-    throw error;
-  }
-};
-
-
 export const deleteFile = async (key) => {
   try {
+    if (key.endsWith('/')) {
+      // It's a folder, delete all contents
+      const listCommand = new ListObjectsV2Command({
+        Bucket: config.bucketName,
+        Prefix: key
+      });
+      
+      const { Contents } = await s3Client.send(listCommand);
+      
+      if (Contents && Contents.length > 0) {
+        for (const item of Contents) {
+          if (item.Key) {
+            await s3Client.send(new DeleteObjectCommand({
+              Bucket: config.bucketName,
+              Key: item.Key
+            }));
+          }
+        }
+      }
+    }
+    
+    // Delete the file or empty folder marker
     const command = new DeleteObjectCommand({
       Bucket: config.bucketName,
       Key: key
@@ -132,65 +120,30 @@ export const deleteFile = async (key) => {
   }
 };
 
-export const renameS3File = async (oldPath, newPath) => {
-  try {
-    if (oldPath.endsWith('/')) {
-      // Renaming folder
-      const listCommand = new ListObjectsV2Command({
-        Bucket: config.bucketName,
-        Prefix: oldPath,
-      });
-      const { Contents } = await s3Client.send(listCommand);
-
-      for (const item of Contents) {
-        const newKey = item.Key.replace(oldPath, newPath);
-        await s3Client.send(new CopyObjectCommand({
-          Bucket: config.bucketName,
-          CopySource: `${config.bucketName}/${item.Key}`,
-          Key: newKey,
-        }));
-        await s3Client.send(new DeleteObjectCommand({
-          Bucket: config.bucketName,
-          Key: item.Key,
-        }));
-      }
-    } else {
-      // Renaming file
-      await s3Client.send(new CopyObjectCommand({
-        Bucket: config.bucketName,
-        CopySource: `${config.bucketName}/${oldPath}`,
-        Key: newPath,
-      }));
-      await s3Client.send(new DeleteObjectCommand({
-        Bucket: config.bucketName,
-        Key: oldPath,
-      }));
-    }
-  } catch (error) {
-    console.error("Error renaming:", error);
-    throw error;
-  }
-};
-
-
 export const renameFile = async (oldPath, newPath) => {
   try {
     if (oldPath.endsWith('/')) {
+      // It's a folder, rename all contents
       const listCommand = new ListObjectsV2Command({
         Bucket: config.bucketName,
         Prefix: oldPath
       });
+      
       const { Contents } = await s3Client.send(listCommand);
-
+      
       if (Contents && Contents.length > 0) {
         for (const item of Contents) {
           if (item.Key) {
             const newKey = item.Key.replace(oldPath, newPath);
+            
+            // Copy to new location
             await s3Client.send(new CopyObjectCommand({
               Bucket: config.bucketName,
               CopySource: `${config.bucketName}/${item.Key}`,
               Key: newKey
             }));
+            
+            // Delete from old location
             await s3Client.send(new DeleteObjectCommand({
               Bucket: config.bucketName,
               Key: item.Key
@@ -198,12 +151,17 @@ export const renameFile = async (oldPath, newPath) => {
           }
         }
       }
+      
+      // Create the new folder marker
+      await createFolder(newPath);
     } else {
+      // It's a file, simple rename
       await s3Client.send(new CopyObjectCommand({
         Bucket: config.bucketName,
         CopySource: `${config.bucketName}/${oldPath}`,
         Key: newPath
       }));
+      
       await s3Client.send(new DeleteObjectCommand({
         Bucket: config.bucketName,
         Key: oldPath
@@ -230,23 +188,31 @@ export const createFolder = async (path) => {
 };
 
 export const moveFile = async (sourcePath, destinationPath) => {
-  await copyFile(sourcePath, destinationPath);
-  await deleteFile(sourcePath);
+  try {
+    await copyFile(sourcePath, destinationPath);
+    await deleteFile(sourcePath);
+  } catch (error) {
+    console.error("Error moving file/folder:", error);
+    throw error;
+  }
 };
 
 export const copyFile = async (sourcePath, destinationPath) => {
   try {
     if (sourcePath.endsWith('/')) {
+      // It's a folder
       const listCommand = new ListObjectsV2Command({
         Bucket: config.bucketName,
         Prefix: sourcePath
       });
+      
       const { Contents } = await s3Client.send(listCommand);
-
+      
       if (Contents && Contents.length > 0) {
         for (const item of Contents) {
           if (item.Key) {
             const newKey = item.Key.replace(sourcePath, destinationPath);
+            
             await s3Client.send(new CopyObjectCommand({
               Bucket: config.bucketName,
               CopySource: `${config.bucketName}/${item.Key}`,
@@ -255,9 +221,11 @@ export const copyFile = async (sourcePath, destinationPath) => {
           }
         }
       }
-
+      
+      // Create destination folder marker
       await createFolder(destinationPath);
     } else {
+      // It's a file
       await s3Client.send(new CopyObjectCommand({
         Bucket: config.bucketName,
         CopySource: `${config.bucketName}/${sourcePath}`,
@@ -293,6 +261,24 @@ export const uploadFile = async (file, path = '', onProgress) => {
   try {
     const normalizedPath = path ? (path.endsWith('/') ? path : `${path}/`) : '';
     const key = `${normalizedPath}${file.name}`;
+    
+    // If file is a Buffer (for edited images)
+    if (Buffer.isBuffer(file)) {
+      const command = new PutObjectCommand({
+        Bucket: config.bucketName,
+        Key: path, // Use the provided path directly
+        Body: file,
+        ContentType: 'image/png' // Default to PNG for edited images
+      });
+      
+      if (onProgress) onProgress(0);
+      await s3Client.send(command);
+      if (onProgress) onProgress(100);
+      
+      return path;
+    }
+    
+    // Regular file upload
     const arrayBuffer = await file.arrayBuffer();
     const uint8Array = new Uint8Array(arrayBuffer);
 
